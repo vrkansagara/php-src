@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2015 The PHP Group                                |
+   | Copyright (c) 1997-2016 The PHP Group                                |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -49,7 +49,7 @@ const zend_function_entry php_dom_documentfragment_class_functions[] = {
 	PHP_FE_END
 };
 
-/* {{{ proto void DOMDocumentFragment::__construct(); */
+/* {{{ proto void DOMDocumentFragment::__construct() */
 PHP_METHOD(domdocumentfragment, __construct)
 {
 
@@ -112,7 +112,7 @@ static void php_dom_xmlSetTreeDoc(xmlNodePtr tree, xmlDocPtr doc) /* {{{ */
 }
 /* }}} */
 
-/* {{{ proto void DOMDocumentFragment::appendXML(string data); */
+/* {{{ proto void DOMDocumentFragment::appendXML(string data) */
 PHP_METHOD(domdocumentfragment, appendXML) {
 	zval *id;
 	xmlNode *nodep;

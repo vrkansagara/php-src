@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend OPcache                                                         |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2015 The PHP Group                                |
+   | Copyright (c) 1998-2016 The PHP Group                                |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -45,7 +45,6 @@
 /* True globals */
 /* old/new mapping. We can use true global even for ZTS because its usage
    is wrapped with exclusive lock anyway */
-static HashTable xlat_table;
 static const zend_shared_memory_handlers *g_shared_alloc_handler = NULL;
 static const char *g_shared_model;
 /* pointer to globals allocated in SHM and shared across processes */
@@ -188,6 +187,11 @@ int zend_shared_alloc_startup(size_t requested_size)
 		smm_shared_globals = NULL;
 		return res;
 	}
+#if ENABLE_FILE_CACHE_FALLBACK
+	if (ALLOC_FALLBACK == res) {
+		return ALLOC_FALLBACK;
+	}
+#endif
 
 	if (!g_shared_alloc_handler) {
 		/* try memory handlers in order */
@@ -208,6 +212,11 @@ int zend_shared_alloc_startup(size_t requested_size)
 	if (res == SUCCESSFULLY_REATTACHED) {
 		return res;
 	}
+#if ENABLE_FILE_CACHE_FALLBACK
+	if (ALLOC_FALLBACK == res) {
+		return ALLOC_FALLBACK;
+	}
+#endif
 
 	shared_segments_array_size = ZSMMG(shared_segments_count) * S_H(segment_type_size)();
 
@@ -314,6 +323,7 @@ void *zend_shared_alloc(size_t size)
 			ZSMMG(shared_segments)[i]->pos += block_size;
 			ZSMMG(shared_free) -= block_size;
 			memset(retval, 0, block_size);
+			ZEND_ASSERT(((zend_uintptr_t)retval & 0x7) == 0); /* should be 8 byte aligned */
 			return retval;
 		}
 	}
@@ -325,7 +335,7 @@ int zend_shared_memdup_size(void *source, size_t size)
 {
 	void *old_p;
 
-	if ((old_p = zend_hash_index_find_ptr(&xlat_table, (zend_ulong)source)) != NULL) {
+	if ((old_p = zend_hash_index_find_ptr(&ZCG(xlat_table), (zend_ulong)source)) != NULL) {
 		/* we already duplicated this pointer */
 		return 0;
 	}
@@ -337,7 +347,7 @@ void *_zend_shared_memdup(void *source, size_t size, zend_bool free_source)
 {
 	void *old_p, *retval;
 
-	if ((old_p = zend_hash_index_find_ptr(&xlat_table, (zend_ulong)source)) != NULL) {
+	if ((old_p = zend_hash_index_find_ptr(&ZCG(xlat_table), (zend_ulong)source)) != NULL) {
 		/* we already duplicated this pointer */
 		return old_p;
 	}
@@ -393,21 +403,10 @@ void zend_shared_alloc_lock(void)
 #endif
 
 	ZCG(locked) = 1;
-
-	/* Prepare translation table
-	 *
-	 * Make it persistent so that it uses malloc() and allocated blocks
-	 * won't be taken from space which is freed by efree in memdup.
-	 * Otherwise it leads to false matches in memdup check.
-	 */
-	zend_hash_init(&xlat_table, 128, NULL, NULL, 1);
 }
 
 void zend_shared_alloc_unlock(void)
 {
-	/* Destroy translation table */
-	zend_hash_destroy(&xlat_table);
-
 	ZCG(locked) = 0;
 
 #ifndef ZEND_WIN32
@@ -422,21 +421,39 @@ void zend_shared_alloc_unlock(void)
 #endif
 }
 
+void zend_shared_alloc_init_xlat_table(void)
+{
+
+	/* Prepare translation table
+	 *
+	 * Make it persistent so that it uses malloc() and allocated blocks
+	 * won't be taken from space which is freed by efree in memdup.
+	 * Otherwise it leads to false matches in memdup check.
+	 */
+	zend_hash_init(&ZCG(xlat_table), 128, NULL, NULL, 1);
+}
+
+void zend_shared_alloc_destroy_xlat_table(void)
+{
+	/* Destroy translation table */
+	zend_hash_destroy(&ZCG(xlat_table));
+}
+
 void zend_shared_alloc_clear_xlat_table(void)
 {
-	zend_hash_clean(&xlat_table);
+	zend_hash_clean(&ZCG(xlat_table));
 }
 
 void zend_shared_alloc_register_xlat_entry(const void *old, const void *new)
 {
-	zend_hash_index_update_ptr(&xlat_table, (zend_ulong)old, (void*)new);
+	zend_hash_index_add_new_ptr(&ZCG(xlat_table), (zend_ulong)old, (void*)new);
 }
 
 void *zend_shared_alloc_get_xlat_entry(const void *old)
 {
 	void *retval;
 
-	if ((retval = zend_hash_index_find_ptr(&xlat_table, (zend_ulong)old)) == NULL) {
+	if ((retval = zend_hash_index_find_ptr(&ZCG(xlat_table), (zend_ulong)old)) == NULL) {
 		return NULL;
 	}
 	return retval;
@@ -479,6 +496,10 @@ void zend_accel_shared_protect(int mode)
 #ifdef HAVE_MPROTECT
 	int i;
 
+	if (!smm_shared_globals) {
+		return;
+	}
+
 	if (mode) {
 		mode = PROT_READ;
 	} else {
@@ -489,4 +510,21 @@ void zend_accel_shared_protect(int mode)
 		mprotect(ZSMMG(shared_segments)[i]->p, ZSMMG(shared_segments)[i]->size, mode);
 	}
 #endif
+}
+
+int zend_accel_in_shm(void *ptr)
+{
+	int i;
+
+	if (!smm_shared_globals) {
+		return 0;
+	}
+
+	for (i = 0; i < ZSMMG(shared_segments_count); i++) {
+		if ((char*)ptr >= (char*)ZSMMG(shared_segments)[i]->p &&
+		    (char*)ptr < (char*)ZSMMG(shared_segments)[i]->p + ZSMMG(shared_segments)[i]->size) {
+			return 1;
+		}
+	}
+	return 0;
 }

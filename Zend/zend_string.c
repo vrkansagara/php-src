@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend Engine                                                          |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2015 Zend Technologies Ltd. (http://www.zend.com) |
+   | Copyright (c) 1998-2016 Zend Technologies Ltd. (http://www.zend.com) |
    +----------------------------------------------------------------------+
    | This source file is subject to version 2.00 of the Zend license,     |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -56,7 +56,7 @@ void zend_interned_strings_init(void)
 
 	/* interned empty string */
 	str = zend_string_alloc(sizeof("")-1, 1);
-	str->val[0] = '\000';
+	ZSTR_VAL(str)[0] = '\000';
 	CG(empty_string) = zend_new_interned_string_int(str);
 #endif
 
@@ -83,7 +83,7 @@ static zend_string *zend_new_interned_string_int(zend_string *str)
 	uint idx;
 	Bucket *p;
 
-	if (IS_INTERNED(str)) {
+	if (ZSTR_IS_INTERNED(str)) {
 		return str;
 	}
 
@@ -92,8 +92,8 @@ static zend_string *zend_new_interned_string_int(zend_string *str)
 	idx = HT_HASH(&CG(interned_strings), nIndex);
 	while (idx != HT_INVALID_IDX) {
 		p = HT_HASH_TO_BUCKET(&CG(interned_strings), idx);
-		if ((p->h == h) && (p->key->len == str->len)) {
-			if (!memcmp(p->key->val, str->val, str->len)) {
+		if ((p->h == h) && (ZSTR_LEN(p->key) == ZSTR_LEN(str))) {
+			if (!memcmp(ZSTR_VAL(p->key), ZSTR_VAL(str), ZSTR_LEN(str))) {
 				zend_string_release(str);
 				return p->key;
 			}

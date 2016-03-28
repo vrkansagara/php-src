@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2015 The PHP Group                                |
+   | Copyright (c) 1997-2016 The PHP Group                                |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -150,7 +150,7 @@ const zend_function_entry php_dom_element_class_functions[] = { /* {{{ */
 };
 /* }}} */
 
-/* {{{ proto void DOMElement::__construct(string name, [string value], [string uri]); */
+/* {{{ proto void DOMElement::__construct(string name, [string value], [string uri]) */
 PHP_METHOD(domelement, __construct)
 {
 

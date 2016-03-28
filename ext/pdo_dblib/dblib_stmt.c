@@ -2,7 +2,7 @@
   +----------------------------------------------------------------------+
   | PHP Version 7                                                        |
   +----------------------------------------------------------------------+
-  | Copyright (c) 1997-2015 The PHP Group                                |
+  | Copyright (c) 1997-2016 The PHP Group                                |
   +----------------------------------------------------------------------+
   | This source file is subject to version 3.01 of the PHP license,      |
   | that is bundled with this package in the file LICENSE, and is        |
@@ -102,7 +102,7 @@ static int pdo_dblib_stmt_cursor_closer(pdo_stmt_t *stmt)
 
 	/* Cancel any pending results */
 	dbcancel(H->link);
-
+	
 	return 1;
 }
 
@@ -192,15 +192,25 @@ static int pdo_dblib_stmt_describe(pdo_stmt_t *stmt, int colno)
 	pdo_dblib_stmt *S = (pdo_dblib_stmt*)stmt->driver_data;
 	pdo_dblib_db_handle *H = S->H;
 	struct pdo_column_data *col;
-	zend_string *str;
-
+	char *fname;
+	
 	if(colno >= stmt->column_count || colno < 0)  {
 		return FAILURE;
 	}
 
 	col = &stmt->columns[colno];
-	str = dbcolname(H->link, colno+1);
-	col->name =  zend_string_init(str, strlen(str), 0);
+	fname = (char*)dbcolname(H->link, colno+1);
+
+	if (fname && *fname) {
+		col->name =  zend_string_init(fname, strlen(fname), 0);
+	} else {
+		char buf[16];
+		int len;
+		
+		len = snprintf(buf, sizeof(buf), "computed%d", colno);
+		col->name = zend_string_init(buf, len, 0);
+	}
+
 	col->maxlen = dbcollen(H->link, colno+1);
 	col->param_type = PDO_PARAM_STR;
 
@@ -256,6 +266,25 @@ static int pdo_dblib_stmt_get_col(pdo_stmt_t *stmt, int colno, char **ptr,
 			php_strtoupper(tmp_ptr, *len);
 			tmp_ptr[36] = '\0';
 			*ptr = tmp_ptr;
+			break;
+		}
+		case SQLDATETIM4:
+		case SQLDATETIME: {
+			DBDATETIME dt;
+			DBDATEREC di;
+
+			dbconvert(H->link, coltype, (BYTE*) *ptr, -1, SQLDATETIME, (LPBYTE) &dt, -1);
+			dbdatecrack(H->link, &di, &dt);
+
+			*len = spprintf((char**) &tmp_ptr, 20, "%d-%02d-%02d %02d:%02d:%02d",
+#if defined(PHP_DBLIB_IS_MSSQL) || defined(MSDBLIB)
+					di.year,     di.month,       di.day,        di.hour,     di.minute,     di.second
+#else
+					di.dateyear, di.datemonth+1, di.datedmonth, di.datehour, di.dateminute, di.datesecond
+#endif
+				);
+
+			*ptr = (char*) tmp_ptr;
 			break;
 		}
 		default:

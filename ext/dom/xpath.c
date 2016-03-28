@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2015 The PHP Group                                |
+   | Copyright (c) 1997-2016 The PHP Group                                |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -188,15 +188,14 @@ static void dom_xpath_ext_function_php(xmlXPathParserContextPtr ctxt, int nargs,
 	ZVAL_STRING(&fci.function_name, (char *) obj->stringval);
 	xmlXPathFreeObject(obj);
 
-	fci.symbol_table = NULL;
 	fci.object = NULL;
 	fci.retval = &retval;
 	fci.no_separation = 0;
 
 	if (!zend_make_callable(&fci.function_name, &callable)) {
-		php_error_docref(NULL, E_WARNING, "Unable to call handler %s()", callable->val);
+		php_error_docref(NULL, E_WARNING, "Unable to call handler %s()", ZSTR_VAL(callable));
 	} else if (intern->registerPhpFunctions == 2 && zend_hash_exists(intern->registered_phpfunctions, callable) == 0) {
-		php_error_docref(NULL, E_WARNING, "Not allowed to call handler '%s()'.", callable->val);
+		php_error_docref(NULL, E_WARNING, "Not allowed to call handler '%s()'.", ZSTR_VAL(callable));
 		/* Push an empty string, so that we at least have an xslt result... */
 		valuePush(ctxt, xmlXPathNewString((xmlChar *)""));
 	} else {
@@ -209,7 +208,7 @@ static void dom_xpath_ext_function_php(xmlXPathParserContextPtr ctxt, int nargs,
 					ALLOC_HASHTABLE(intern->node_list);
 					zend_hash_init(intern->node_list, 0, NULL, ZVAL_PTR_DTOR, 0);
 				}
-				GC_REFCOUNT(&retval)++;
+				Z_ADDREF(retval);
 				zend_hash_next_index_insert(intern->node_list, &retval);
 				obj = Z_DOMOBJ_P(&retval);
 				nodep = dom_object_get_node(obj);
@@ -221,7 +220,7 @@ static void dom_xpath_ext_function_php(xmlXPathParserContextPtr ctxt, int nargs,
 				valuePush(ctxt, xmlXPathNewString((xmlChar *)""));
 			} else {
 				zend_string *str = zval_get_string(&retval);
-				valuePush(ctxt, xmlXPathNewString((xmlChar *) str->val));
+				valuePush(ctxt, xmlXPathNewString((xmlChar *) ZSTR_VAL(str)));
 				zend_string_release(str);
 			}
 			zval_ptr_dtor(&retval);
@@ -309,7 +308,7 @@ int dom_xpath_document_read(dom_object *obj, zval *retval)
 }
 /* }}} */
 
-/* {{{ proto boolean dom_xpath_register_ns(string prefix, string uri); */
+/* {{{ proto boolean dom_xpath_register_ns(string prefix, string uri) */
 PHP_FUNCTION(dom_xpath_register_ns)
 {
 	zval *id;
@@ -474,7 +473,7 @@ static void php_xpath_eval(INTERNAL_FUNCTION_PARAMETERS, int type) /* {{{ */
 			break;
 
 		case XPATH_NUMBER:
-			RETVAL_DOUBLE(xpathobjp->floatval)
+			RETVAL_DOUBLE(xpathobjp->floatval);
 			break;
 
 		case XPATH_STRING:
@@ -490,14 +489,14 @@ static void php_xpath_eval(INTERNAL_FUNCTION_PARAMETERS, int type) /* {{{ */
 }
 /* }}} */
 
-/* {{{ proto DOMNodeList dom_xpath_query(string expr [,DOMNode context [, boolean registerNodeNS]]); */
+/* {{{ proto DOMNodeList dom_xpath_query(string expr [,DOMNode context [, boolean registerNodeNS]]) */
 PHP_FUNCTION(dom_xpath_query)
 {
 	php_xpath_eval(INTERNAL_FUNCTION_PARAM_PASSTHRU, PHP_DOM_XPATH_QUERY);
 }
 /* }}} end dom_xpath_query */
 
-/* {{{ proto mixed dom_xpath_evaluate(string expr [,DOMNode context [, boolean registerNodeNS]]); */
+/* {{{ proto mixed dom_xpath_evaluate(string expr [,DOMNode context [, boolean registerNodeNS]]) */
 PHP_FUNCTION(dom_xpath_evaluate)
 {
 	php_xpath_eval(INTERNAL_FUNCTION_PARAM_PASSTHRU, PHP_DOM_XPATH_EVALUATE);

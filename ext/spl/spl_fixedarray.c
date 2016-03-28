@@ -2,7 +2,7 @@
   +----------------------------------------------------------------------+
   | PHP Version 7                                                        |
   +----------------------------------------------------------------------+
-  | Copyright (c) 1997-2015 The PHP Group                                |
+  | Copyright (c) 1997-2016 The PHP Group                                |
   +----------------------------------------------------------------------+
   | This source file is subject to version 3.01 of the PHP license,      |
   | that is bundled with this package in the file LICENSE, and is        |
@@ -805,9 +805,11 @@ SPL_METHOD(SplFixedArray, offsetGet)
 	value = spl_fixedarray_object_read_dimension_helper(intern, zindex);
 
 	if (value) {
-		RETURN_ZVAL(value, 1, 0);
+		ZVAL_DEREF(value);
+		ZVAL_COPY(return_value, value);
+	} else {
+		RETURN_NULL();
 	}
-	RETURN_NULL();
 } /* }}} */
 
 /* {{{ proto void SplFixedArray::offsetSet(mixed $index, mixed $newval)
@@ -1001,9 +1003,11 @@ SPL_METHOD(SplFixedArray, current)
 	zval_ptr_dtor(&zindex);
 
 	if (value) {
-		RETURN_ZVAL(value, 1, 0);
+		ZVAL_DEREF(value);
+		ZVAL_COPY(return_value, value);
+	} else {
+		RETURN_NULL();
 	}
-	RETURN_NULL();
 }
 /* }}} */
 

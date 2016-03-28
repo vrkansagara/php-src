@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2015 The PHP Group                                |
+   | Copyright (c) 1997-2016 The PHP Group                                |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -629,8 +629,8 @@ static size_t php_ftp_dirstream_read(php_stream *stream, char *buf, size_t count
 
 	basename = php_basename(ent->d_name, tmp_len, NULL, 0);
 
-	tmp_len = MIN(sizeof(ent->d_name), basename->len - 1);
-	memcpy(ent->d_name, basename->val, tmp_len);
+	tmp_len = MIN(sizeof(ent->d_name), ZSTR_LEN(basename) - 1);
+	memcpy(ent->d_name, ZSTR_VAL(basename), tmp_len);
 	ent->d_name[tmp_len - 1] = '\0';
 	zend_string_release(basename);
 

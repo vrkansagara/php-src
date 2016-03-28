@@ -3,7 +3,7 @@
   | phar php single-file executable PHP extension                        |
   | utility functions                                                    |
   +----------------------------------------------------------------------+
-  | Copyright (c) 2005-2015 The PHP Group                                |
+  | Copyright (c) 2005-2016 The PHP Group                                |
   +----------------------------------------------------------------------+
   | This source file is subject to version 3.01 of the PHP license,      |
   | that is bundled with this package in the file LICENSE, and is        |
@@ -199,13 +199,6 @@ int phar_mount_entry(phar_archive_data *phar, char *filename, int filename_len, 
 			entry.tmp = estrndup(filename, filename_len);
 		}
 	}
-#if PHP_API_VERSION < 20100412
-	if (PG(safe_mode) && !is_phar && (!php_checkuid(entry.tmp, NULL, CHECKUID_CHECK_FILE_AND_DIR))) {
-		efree(entry.tmp);
-		efree(entry.filename);
-		return FAILURE;
-	}
-#endif
 	filename = entry.tmp;
 
 	/* only check openbasedir for files, not for phar streams */
@@ -321,9 +314,9 @@ splitted:
 	ret = php_resolve_path(filename, filename_len, path);
 	efree(path);
 
-	if (ret && ret->len > 8 && !strncmp(ret->val, "phar://", 7)) {
+	if (ret && ZSTR_LEN(ret) > 8 && !strncmp(ZSTR_VAL(ret), "phar://", 7)) {
 		/* found phar:// */
-		if (SUCCESS != phar_split_fname(ret->val, ret->len, &arch, &arch_len, &entry, &entry_len, 1, 0)) {
+		if (SUCCESS != phar_split_fname(ZSTR_VAL(ret), ZSTR_LEN(ret), &arch, &arch_len, &entry, &entry_len, 1, 0)) {
 			return ret;
 		}
 
@@ -493,7 +486,12 @@ really_get_entry:
 	(*ret)->is_tar = entry->is_tar;
 	(*ret)->fp = phar_get_efp(entry, 1);
 	if (entry->link) {
-		(*ret)->zero = phar_get_fp_offset(phar_get_link_source(entry));
+		phar_entry_info *link = phar_get_link_source(entry);
+		if(!link) {
+			efree(*ret);
+			return FAILURE;
+		}
+		(*ret)->zero = phar_get_fp_offset(link);
 	} else {
 		(*ret)->zero = phar_get_fp_offset(entry);
 	}
@@ -1179,7 +1177,7 @@ char * phar_compress_filter(phar_entry_info * entry, int return_unknown) /* {{{ 
  */
 char * phar_decompress_filter(phar_entry_info * entry, int return_unknown) /* {{{ */
 {
-	php_uint32 flags;
+	uint32_t flags;
 
 	if (entry->is_modified) {
 		flags = entry->old_flags;
@@ -1297,7 +1295,7 @@ phar_entry_info *phar_get_entry_info_dir(phar_archive_data *phar, char *path, in
 		zend_string *str_key;
 
 		ZEND_HASH_FOREACH_STR_KEY(&phar->mounted_dirs, str_key) {
-			if ((int)str_key->len >= path_len || strncmp(str_key->val, path, str_key->len)) {
+			if ((int)ZSTR_LEN(str_key) >= path_len || strncmp(ZSTR_VAL(str_key), path, ZSTR_LEN(str_key))) {
 				continue;
 			} else {
 				char *test;
@@ -1306,19 +1304,19 @@ phar_entry_info *phar_get_entry_info_dir(phar_archive_data *phar, char *path, in
 
 				if (NULL == (entry = zend_hash_find_ptr(&phar->manifest, str_key))) {
 					if (error) {
-						spprintf(error, 4096, "phar internal error: mounted path \"%s\" could not be retrieved from manifest", str_key->val);
+						spprintf(error, 4096, "phar internal error: mounted path \"%s\" could not be retrieved from manifest", ZSTR_VAL(str_key));
 					}
 					return NULL;
 				}
 
 				if (!entry->tmp || !entry->is_mounted) {
 					if (error) {
-						spprintf(error, 4096, "phar internal error: mounted path \"%s\" is not properly initialized as a mounted path", str_key->val);
+						spprintf(error, 4096, "phar internal error: mounted path \"%s\" is not properly initialized as a mounted path", ZSTR_VAL(str_key));
 					}
 					return NULL;
 				}
 
-				test_len = spprintf(&test, MAXPATHLEN, "%s%s", entry->tmp, path + str_key->len);
+				test_len = spprintf(&test, MAXPATHLEN, "%s%s", entry->tmp, path + ZSTR_LEN(str_key));
 
 				if (SUCCESS != php_stream_stat_path(test, &ssb)) {
 					efree(test);
@@ -1475,7 +1473,7 @@ static int phar_call_openssl_signverify(int is_sign, php_stream *fp, zend_off_t 
 /* }}} */
 #endif /* #ifndef PHAR_HAVE_OPENSSL */
 
-int phar_verify_signature(php_stream *fp, size_t end_of_phar, php_uint32 sig_type, char *sig, int sig_len, char *fname, char **signature, int *signature_len, char **error) /* {{{ */
+int phar_verify_signature(php_stream *fp, size_t end_of_phar, uint32_t sig_type, char *sig, int sig_len, char *fname, char **signature, int *signature_len, char **error) /* {{{ */
 {
 	int read_size, len;
 	zend_off_t read_len;
@@ -1509,7 +1507,7 @@ int phar_verify_signature(php_stream *fp, size_t end_of_phar, php_uint32 sig_typ
 			pfp = php_stream_open_wrapper(pfile, "rb", 0, NULL);
 			efree(pfile);
 
-			if (!pfp || !(pubkey = php_stream_copy_to_mem(pfp, PHP_STREAM_COPY_ALL, 0)) || !pubkey->len) {
+			if (!pfp || !(pubkey = php_stream_copy_to_mem(pfp, PHP_STREAM_COPY_ALL, 0)) || !ZSTR_LEN(pubkey)) {
 				if (pfp) {
 					php_stream_close(pfp);
 				}
@@ -1523,7 +1521,7 @@ int phar_verify_signature(php_stream *fp, size_t end_of_phar, php_uint32 sig_typ
 #ifndef PHAR_HAVE_OPENSSL
 			tempsig = sig_len;
 
-			if (FAILURE == phar_call_openssl_signverify(0, fp, end_of_phar, pubkey ? pubkey->val : NULL, pubkey ? pubkey->len : 0, &sig, &tempsig)) {
+			if (FAILURE == phar_call_openssl_signverify(0, fp, end_of_phar, pubkey ? ZSTR_VAL(pubkey) : NULL, pubkey ? ZSTR_LEN(pubkey) : 0, &sig, &tempsig)) {
 				if (pubkey) {
 					zend_string_release(pubkey);
 				}
@@ -1541,7 +1539,7 @@ int phar_verify_signature(php_stream *fp, size_t end_of_phar, php_uint32 sig_typ
 
 			sig_len = tempsig;
 #else
-			in = BIO_new_mem_buf(pubkey ? pubkey->val : NULL, pubkey ? pubkey->len : 0);
+			in = BIO_new_mem_buf(pubkey ? ZSTR_VAL(pubkey) : NULL, pubkey ? ZSTR_LEN(pubkey) : 0);
 
 			if (NULL == in) {
 				zend_string_release(pubkey);
@@ -1924,7 +1922,7 @@ void phar_add_virtual_dirs(phar_archive_data *phar, char *filename, int filename
 
 	while ((s = zend_memrchr(filename, '/', filename_len))) {
 		filename_len = s - filename;
-		if (NULL == zend_hash_str_add_empty_element(&phar->virtual_dirs, filename, filename_len)) {
+		if (!filename_len || NULL == zend_hash_str_add_empty_element(&phar->virtual_dirs, filename, filename_len)) {
 			break;
 		}
 	}

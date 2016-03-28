@@ -1,5 +1,5 @@
 --TEST--
-Closure 059: Closure type hinting
+Closure 059: Closure type declaration
 --FILE--
 <?php
 class A {
@@ -19,17 +19,17 @@ call_user_func(array($f,"__invoke"), $a);
 
 try {
 	$f($b);
-} catch (EngineException $e) {
+} catch (Error $e) {
 	echo "Exception: " . $e->getMessage() . "\n";
 }
 try {
 	$f->__invoke($b);
-} catch (EngineException $e) {
+} catch (Error $e) {
 	echo "Exception: " . $e->getMessage() . "\n";
 }
 try {
 	call_user_func(array($f,"__invoke"), $b);
-} catch (EngineException $e) {
+} catch (Error $e) {
 	echo "Exception: " . $e->getMessage() . "\n";
 }
 --EXPECTF--

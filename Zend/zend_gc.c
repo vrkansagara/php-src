@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend Engine                                                          |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2015 Zend Technologies Ltd. (http://www.zend.com) |
+   | Copyright (c) 1998-2016 Zend Technologies Ltd. (http://www.zend.com) |
    +----------------------------------------------------------------------+
    | This source file is subject to version 2.00 of the Zend license,     |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -242,6 +242,13 @@ ZEND_API void ZEND_FASTCALL gc_possible_root(zend_refcounted *ref)
 		GC_REFCOUNT(ref)++;
 		gc_collect_cycles();
 		GC_REFCOUNT(ref)--;
+		if (UNEXPECTED(GC_REFCOUNT(ref)) == 0) {
+			zval_dtor_func_for_ptr(ref);
+			return;
+		}
+		if (UNEXPECTED(GC_INFO(ref))) {
+			return;
+		}
 		newRoot = GC_G(unused);
 		if (!newRoot) {
 #if ZEND_GC_DEBUG
@@ -295,6 +302,7 @@ static void gc_scan_black(zend_refcounted *ref)
 {
 	HashTable *ht;
 	Bucket *p, *end;
+	zval *zv;
 
 tail_call:
 	ht = NULL;
@@ -362,12 +370,24 @@ tail_call:
 	if (!ht->nNumUsed) return;
 	p = ht->arData;
 	end = p + ht->nNumUsed;
-	while (!Z_REFCOUNTED((--end)->val)) {
+	while (1) {
+		end--;
+		zv = &end->val;
+		if (Z_TYPE_P(zv) == IS_INDIRECT) {
+			zv = Z_INDIRECT_P(zv);
+		}
+		if (Z_REFCOUNTED_P(zv)) {
+			break;
+		}
 		if (p == end) return;
 	}
 	while (p != end) {
-		if (Z_REFCOUNTED(p->val)) {
-			ref = Z_COUNTED(p->val);
+		zv = &p->val;
+		if (Z_TYPE_P(zv) == IS_INDIRECT) {
+			zv = Z_INDIRECT_P(zv);
+		}
+		if (Z_REFCOUNTED_P(zv)) {
+			ref = Z_COUNTED_P(zv);
 			GC_REFCOUNT(ref)++;
 			if (GC_REF_GET_COLOR(ref) != GC_BLACK) {
 				gc_scan_black(ref);
@@ -375,7 +395,11 @@ tail_call:
 		}
 		p++;
 	}
-	ref = Z_COUNTED(p->val);
+	zv = &p->val;
+	if (Z_TYPE_P(zv) == IS_INDIRECT) {
+		zv = Z_INDIRECT_P(zv);
+	}
+	ref = Z_COUNTED_P(zv);
 	GC_REFCOUNT(ref)++;
 	if (GC_REF_GET_COLOR(ref) != GC_BLACK) {
 		goto tail_call;
@@ -386,6 +410,7 @@ static void gc_mark_grey(zend_refcounted *ref)
 {
     HashTable *ht;
 	Bucket *p, *end;
+	zval *zv;
 
 tail_call:
 	if (GC_REF_GET_COLOR(ref) != GC_GREY) {
@@ -454,27 +479,43 @@ tail_call:
 		if (!ht->nNumUsed) return;
 		p = ht->arData;
 		end = p + ht->nNumUsed;
-		while (!Z_REFCOUNTED((--end)->val)) {
+		while (1) {
+			end--;
+			zv = &end->val;
+			if (Z_TYPE_P(zv) == IS_INDIRECT) {
+				zv = Z_INDIRECT_P(zv);
+			}
+			if (Z_REFCOUNTED_P(zv)) {
+				break;
+			}
 			if (p == end) return;
 		}
 		while (p != end) {
-			if (Z_REFCOUNTED(p->val)) {
-				if (Z_TYPE(p->val) == IS_OBJECT &&
+			zv = &p->val;
+			if (Z_TYPE_P(zv) == IS_INDIRECT) {
+				zv = Z_INDIRECT_P(zv);
+			}
+			if (Z_REFCOUNTED_P(zv)) {
+				if (Z_TYPE_P(zv) == IS_OBJECT &&
 				    UNEXPECTED(!EG(objects_store).object_buckets)) {
-					Z_TYPE_INFO(p->val) = IS_NULL;
+					Z_TYPE_INFO_P(zv) = IS_NULL;
 				} else {
-					ref = Z_COUNTED(p->val);
+					ref = Z_COUNTED_P(zv);
 					GC_REFCOUNT(ref)--;
 					gc_mark_grey(ref);
 				}
 			}
 			p++;
 		}
-		if (Z_TYPE(p->val) == IS_OBJECT &&
+		zv = &p->val;
+		if (Z_TYPE_P(zv) == IS_INDIRECT) {
+			zv = Z_INDIRECT_P(zv);
+		}
+		if (Z_TYPE_P(zv) == IS_OBJECT &&
 		    UNEXPECTED(!EG(objects_store).object_buckets)) {
-			Z_TYPE_INFO(p->val) = IS_NULL;
+			Z_TYPE_INFO_P(zv) = IS_NULL;
 		} else {
-			ref = Z_COUNTED(p->val);
+			ref = Z_COUNTED_P(zv);
 			GC_REFCOUNT(ref)--;
 			goto tail_call;
 		}
@@ -497,6 +538,7 @@ static void gc_scan(zend_refcounted *ref)
 {
     HashTable *ht;
 	Bucket *p, *end;
+	zval *zv;
 
 tail_call:
 	if (GC_REF_GET_COLOR(ref) == GC_GREY) {
@@ -557,17 +599,33 @@ tail_call:
 			if (!ht->nNumUsed) return;
 			p = ht->arData;
 			end = p + ht->nNumUsed;
-			while (!Z_REFCOUNTED((--end)->val)) {
+			while (1) {
+				end--;
+				zv = &end->val;
+				if (Z_TYPE_P(zv) == IS_INDIRECT) {
+					zv = Z_INDIRECT_P(zv);
+				}
+				if (Z_REFCOUNTED_P(zv)) {
+					break;
+				}
 				if (p == end) return;
 			}
 			while (p != end) {
-				if (Z_REFCOUNTED(p->val)) {
-					ref = Z_COUNTED(p->val);
+				zv = &p->val;
+				if (Z_TYPE_P(zv) == IS_INDIRECT) {
+					zv = Z_INDIRECT_P(zv);
+				}
+				if (Z_REFCOUNTED_P(zv)) {
+					ref = Z_COUNTED_P(zv);
 					gc_scan(ref);
 				}
 				p++;
 			}
-			ref = Z_COUNTED(p->val);
+			zv = &p->val;
+			if (Z_TYPE_P(zv) == IS_INDIRECT) {
+				zv = Z_INDIRECT_P(zv);
+			}
+			ref = Z_COUNTED_P(zv);
 			goto tail_call;
 		}
 	}
@@ -641,6 +699,7 @@ static int gc_collect_white(zend_refcounted *ref, uint32_t *flags, gc_additional
 	int count = 0;
 	HashTable *ht;
 	Bucket *p, *end;
+	zval *zv;
 
 tail_call:
 	if (GC_REF_GET_COLOR(ref) == GC_WHITE) {
@@ -731,25 +790,41 @@ tail_call:
 		if (!ht->nNumUsed) return count;
 		p = ht->arData;
 		end = p + ht->nNumUsed;
-		while (!Z_REFCOUNTED((--end)->val)) {
+		while (1) {
+			end--;
+			zv = &end->val;
+			if (Z_TYPE_P(zv) == IS_INDIRECT) {
+				zv = Z_INDIRECT_P(zv);
+			}
+			if (Z_REFCOUNTED_P(zv)) {
+				break;
+			}
 			/* count non-refcounted for compatibility ??? */
-			if (Z_TYPE(end->val) != IS_UNDEF && Z_TYPE(end->val) != IS_INDIRECT) {
+			if (Z_TYPE_P(zv) != IS_UNDEF) {
 				count++;
 			}
 			if (p == end) return count;
 		}
 		while (p != end) {
-			if (Z_REFCOUNTED(p->val)) {
-				ref = Z_COUNTED(p->val);
+			zv = &p->val;
+			if (Z_TYPE_P(zv) == IS_INDIRECT) {
+				zv = Z_INDIRECT_P(zv);
+			}
+			if (Z_REFCOUNTED_P(zv)) {
+				ref = Z_COUNTED_P(zv);
 				GC_REFCOUNT(ref)++;
 				count += gc_collect_white(ref, flags, additional_buffer);
 				/* count non-refcounted for compatibility ??? */
-			} else if (Z_TYPE(p->val) != IS_UNDEF && Z_TYPE(p->val) != IS_INDIRECT) {
-					count++;
+			} else if (Z_TYPE_P(zv) != IS_UNDEF) {
+				count++;
 			}
 			p++;
 		}
-		ref = Z_COUNTED(p->val);
+		zv = &p->val;
+		if (Z_TYPE_P(zv) == IS_INDIRECT) {
+			zv = Z_INDIRECT_P(zv);
+		}
+		ref = Z_COUNTED_P(zv);
 		GC_REFCOUNT(ref)++;
 		goto tail_call;
 	}
@@ -806,6 +881,7 @@ static void gc_remove_nested_data_from_buffer(zend_refcounted *ref, gc_root_buff
 {
 	HashTable *ht = NULL;
 	Bucket *p, *end;
+	zval *zv;
 
 tail_call:
 	if (root ||
@@ -870,17 +946,33 @@ tail_call:
 		if (!ht->nNumUsed) return;
 		p = ht->arData;
 		end = p + ht->nNumUsed;
-		while (!Z_REFCOUNTED((--end)->val)) {
+		while (1) {
+			end--;
+			zv = &end->val;
+			if (Z_TYPE_P(zv) == IS_INDIRECT) {
+				zv = Z_INDIRECT_P(zv);
+			}
+			if (Z_REFCOUNTED_P(zv)) {
+				break;
+			}
 			if (p == end) return;
 		}
 		while (p != end) {
-			if (Z_REFCOUNTED(p->val)) {
-				ref = Z_COUNTED(p->val);
+			zv = &p->val;
+			if (Z_TYPE_P(zv) == IS_INDIRECT) {
+				zv = Z_INDIRECT_P(zv);
+			}
+			if (Z_REFCOUNTED_P(zv)) {
+				ref = Z_COUNTED_P(zv);
 				gc_remove_nested_data_from_buffer(ref, NULL);
 			}
 			p++;
 		}
-		ref = Z_COUNTED(p->val);
+		zv = &p->val;
+		if (Z_TYPE_P(zv) == IS_INDIRECT) {
+			zv = Z_INDIRECT_P(zv);
+		}
+		ref = Z_COUNTED_P(zv);
 		goto tail_call;
 	}
 }

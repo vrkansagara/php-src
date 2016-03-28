@@ -101,7 +101,7 @@ static zend_object *Calendar_clone_obj(zval *object)
 			intl_errors_set_custom_msg(CALENDAR_ERROR_P(co_orig),
 				"Could not clone IntlCalendar", 0);
 			err_msg = intl_error_get_message(CALENDAR_ERROR_P(co_orig));
-			zend_throw_exception(NULL, err_msg->val, 0);
+			zend_throw_exception(NULL, ZSTR_VAL(err_msg), 0);
 			zend_string_free(err_msg);
 		} else {
 			co_new->ucal = newCalendar;
@@ -503,8 +503,6 @@ void calendar_register_IntlCalendar_class(void)
 	CALENDAR_DECL_LONG_CONST("FIELD_DAY_OF_WEEK",			UCAL_DAY_OF_WEEK);
 	CALENDAR_DECL_LONG_CONST("FIELD_DAY_OF_WEEK_IN_MONTH",	UCAL_DAY_OF_WEEK_IN_MONTH);
 	CALENDAR_DECL_LONG_CONST("FIELD_AM_PM",					UCAL_AM_PM);
-	CALENDAR_DECL_LONG_CONST("FIELD_HOUR",					UCAL_HOUR);
-	CALENDAR_DECL_LONG_CONST("FIELD_HOUR_OF_DAY",			UCAL_HOUR_OF_DAY);
 	CALENDAR_DECL_LONG_CONST("FIELD_HOUR",					UCAL_HOUR);
 	CALENDAR_DECL_LONG_CONST("FIELD_HOUR_OF_DAY",			UCAL_HOUR_OF_DAY);
 	CALENDAR_DECL_LONG_CONST("FIELD_MINUTE",				UCAL_MINUTE);

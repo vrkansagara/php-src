@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2015 The PHP Group                                |
+   | Copyright (c) 1997-2016 The PHP Group                                |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -268,7 +268,7 @@ PHP_FUNCTION(shm_put_var)
 	}
 
 	/* insert serialized variable into shared memory */
-	ret = php_put_shm_data(shm_list_ptr->ptr, shm_key, shm_var.s? shm_var.s->val : NULL, shm_var.s? shm_var.s->len : 0);
+	ret = php_put_shm_data(shm_list_ptr->ptr, shm_key, shm_var.s? ZSTR_VAL(shm_var.s) : NULL, shm_var.s? ZSTR_LEN(shm_var.s) : 0);
 
 	/* free string */
 	smart_str_free(&shm_var);

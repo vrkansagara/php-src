@@ -99,11 +99,11 @@ if (typeof(CWD) == "undefined") {
 }
 
 /* defaults; we pick up the precise versions from configure.in */
-var PHP_VERSION = 5;
-var PHP_MINOR_VERSION = 0;
+var PHP_VERSION = 7;
+var PHP_MINOR_VERSION = 1;
 var PHP_RELEASE_VERSION = 0;
 var PHP_EXTRA_VERSION = "";
-var PHP_VERSION_STRING = "5.0.0";
+var PHP_VERSION_STRING = "7.1.0";
 
 /* Get version numbers and DEFINE as a string */
 function get_version_numbers()
@@ -936,6 +936,22 @@ function CHECK_HEADER_ADD_INCLUDE(header_name, flag_name, path_to_check, use_env
 	return p;
 }
 
+/* XXX check whether some manifest was originally supplied, otherwise keep using the default. */
+function generate_version_info_manifest(makefiletarget)
+{
+	var manifest_name = makefiletarget + ".manifest";
+
+	if (MODE_PHPIZE) {
+		MFO.WriteLine("$(BUILD_DIR)\\" + manifest_name + ": " + PHP_DIR + "\\build\\default.manifest");
+		MFO.WriteLine("\t@copy " + PHP_DIR + "\\build\\default.manifest $(BUILD_DIR)\\" + makefiletarget + ".manifest >nul");
+	} else {
+		MFO.WriteLine("$(BUILD_DIR)\\" + manifest_name + ": win32\\build\\default.manifest");
+		MFO.WriteLine("\t@copy $(PHP_SRC_DIR)\\win32\\build\\default.manifest $(BUILD_DIR)\\" + makefiletarget + ".manifest >nul");
+	}
+
+	return manifest_name;
+}
+
 /* Emits rule to generate version info for a SAPI
  * or extension.  Returns the name of the .res file
  * that will be generated */
@@ -1086,13 +1102,15 @@ function SAPI(sapiname, file_list, makefiletarget, cflags, obj_dir)
 
 	/* generate a .res file containing version information */
 	resname = generate_version_info_resource(makefiletarget, sapiname, configure_module_dirname, true);
+
+	manifest_name = generate_version_info_manifest(makefiletarget);
 	
 	MFO.WriteLine(makefiletarget + ": $(BUILD_DIR)\\" + makefiletarget);
 	MFO.WriteLine("\t@echo SAPI " + sapiname_for_printing + " build complete");
 	if (MODE_PHPIZE) {
-		MFO.WriteLine("$(BUILD_DIR)\\" + makefiletarget + ": $(DEPS_" + SAPI + ") $(" + SAPI + "_GLOBAL_OBJS) $(PHPLIB) $(BUILD_DIR)\\" + resname);
+		MFO.WriteLine("$(BUILD_DIR)\\" + makefiletarget + ": $(DEPS_" + SAPI + ") $(" + SAPI + "_GLOBAL_OBJS) $(PHPLIB) $(BUILD_DIR)\\" + resname + " $(BUILD_DIR)\\" + manifest_name);
 	} else {
-		MFO.WriteLine("$(BUILD_DIR)\\" + makefiletarget + ": $(DEPS_" + SAPI + ") $(" + SAPI + "_GLOBAL_OBJS) $(BUILD_DIR)\\$(PHPLIB) $(BUILD_DIR)\\" + resname);
+		MFO.WriteLine("$(BUILD_DIR)\\" + makefiletarget + ": $(DEPS_" + SAPI + ") $(" + SAPI + "_GLOBAL_OBJS) $(BUILD_DIR)\\$(PHPLIB) $(BUILD_DIR)\\" + resname  + " $(BUILD_DIR)\\" + manifest_name);
 	}
 
 	if (makefiletarget.match(new RegExp("\\.dll$"))) {
@@ -1303,6 +1321,7 @@ function EXTENSION(extname, file_list, shared, cflags, dllname, obj_dir)
 
 		var resname = generate_version_info_resource(dllname, extname, configure_module_dirname, false);
 		var ld = '@"$(LINK)"';
+		var manifest_name = generate_version_info_manifest(dllname);
 
 		ldflags = "";
 		if (is_pgo_desired(extname) && (PHP_PGI == "yes" || PHP_PGO != "no")) {
@@ -1322,10 +1341,10 @@ function EXTENSION(extname, file_list, shared, cflags, dllname, obj_dir)
 		MFO.WriteLine("$(BUILD_DIR)\\" + libname + ": $(BUILD_DIR)\\" + dllname);
 		MFO.WriteBlankLines(1);
 		if (MODE_PHPIZE) {
-			MFO.WriteLine("$(BUILD_DIR)\\" + dllname + ": $(DEPS_" + EXT + ") $(" + EXT + "_GLOBAL_OBJS) $(PHPLIB) $(BUILD_DIR)\\" + resname);
+			MFO.WriteLine("$(BUILD_DIR)\\" + dllname + ": $(DEPS_" + EXT + ") $(" + EXT + "_GLOBAL_OBJS) $(PHPLIB) $(BUILD_DIR)\\" + resname + " $(BUILD_DIR)\\" + manifest_name);
 			MFO.WriteLine("\t" + ld + " $(" + EXT + "_GLOBAL_OBJS_RESP) $(PHPLIB) $(LIBS_" + EXT + ") $(LIBS) $(BUILD_DIR)\\" + resname + " /out:$(BUILD_DIR)\\" + dllname + " $(DLL_LDFLAGS) $(LDFLAGS) $(LDFLAGS_" + EXT + ")");
 		} else {
-			MFO.WriteLine("$(BUILD_DIR)\\" + dllname + ": $(DEPS_" + EXT + ") $(" + EXT + "_GLOBAL_OBJS) $(BUILD_DIR)\\$(PHPLIB) $(BUILD_DIR)\\" + resname);
+			MFO.WriteLine("$(BUILD_DIR)\\" + dllname + ": $(DEPS_" + EXT + ") $(" + EXT + "_GLOBAL_OBJS) $(BUILD_DIR)\\$(PHPLIB) $(BUILD_DIR)\\" + resname + " $(BUILD_DIR)\\" + manifest_name);
 			MFO.WriteLine("\t" + ld + " $(" + EXT + "_GLOBAL_OBJS_RESP) $(BUILD_DIR)\\$(PHPLIB) $(LIBS_" + EXT + ") $(LIBS) $(BUILD_DIR)\\" + resname + " /out:$(BUILD_DIR)\\" + dllname + ldflags + " $(DLL_LDFLAGS) $(LDFLAGS) $(LDFLAGS_" + EXT + ")");
 		}
 		MFO.WriteLine("\t-@$(_VC_MANIFEST_EMBED_DLL)");
@@ -1430,79 +1449,117 @@ function ADD_SOURCES(dir, file_list, target, obj_dir)
 
 	var sub_build = "$(BUILD_DIR)\\";
 
-	/* if module dir is not a child of the main source dir,
-	 * we need to tweak it; we should have detected such a
-	 * case in condense_path and rewritten the path to
-	 * be relative.
-	 * This probably breaks for non-sibling dirs, but that
-	 * is not a problem as buildconf only checks for pecl
-	 * as either a child or a sibling */
-	if (obj_dir == null) {
-		var build_dir = dir.replace(new RegExp("^..\\\\"), "");
-		var mangle_dir = build_dir.replace(new RegExp("[\\\\/.-]", "g"), "_");
-		var bd_flags_name = "CFLAGS_BD_" + mangle_dir.toUpperCase();
-	}
-	else {
-		var build_dir = obj_dir.replace(new RegExp("^..\\\\"), "");
-		var mangle_dir = build_dir.replace(new RegExp("[\\\\/.-]", "g"), "_");
-		var bd_flags_name = "CFLAGS_BD_" + mangle_dir.toUpperCase();
-	}
-	
-	var dirs = build_dir.split("\\");
-	var i, d = "";
-	for (i = 0; i < dirs.length; i++) {
-		d += dirs[i];
-		build_dirs[build_dirs.length] = d;
-		d += "\\";
-	}
-	sub_build += d;
+	var srcs_by_dir = {};
 
-
-	DEFINE(bd_flags_name, "/Fp" + sub_build + " /FR" + sub_build + " ");
-	if (VS_TOOLSET) {
-		ADD_FLAG(bd_flags_name, "/Fd" + sub_build);
-	}
-
+	/* Parse the file list to create an aggregated structure based on the subdirs passed. */
 	for (i in file_list) {
 		src = file_list[i];
-		obj = src.replace(re, ".obj");
-		tv += " " + sub_build + obj;
-		resp += " " + sub_build.replace('$(BUILD_DIR)', bd) + obj;
 
-		if (!PHP_MP_DISABLED) {
-			if (i > 0) {
-				objs_line += " " + sub_build + obj;	
-				srcs_line += " " + dir + "\\" + src;
+		var _tmp = src.split("\\");
+
+		var filename = _tmp.pop();
+		
+		// build the obj out dir and use it as a key
+		var dirname = _tmp.join("\\");
+
+		//WARNING("dir: " + dir + " dirname: " + dirname + " filename: " + filename);
+
+		/* if module dir is not a child of the main source dir,
+		 * we need to tweak it; we should have detected such a
+		 * case in condense_path and rewritten the path to
+		 * be relative.
+		 * This probably breaks for non-sibling dirs, but that
+		 * is not a problem as buildconf only checks for pecl
+		 * as either a child or a sibling */
+		if (obj_dir == null) {
+			if (MODE_PHPIZE) {
+				/* In the phpize mode, the subdirs are always relative to BUID_DIR.
+					No need to differentiate by extension, only one gets built. */
+				var build_dir = (dirname ? dirname : "").replace(new RegExp("^..\\\\"), "");
 			} else {
-				objs_line = sub_build + obj;	
-				srcs_line = dir + "\\" + src;
+				var build_dir = (dirname ? (dir + "\\" + dirname) : dir).replace(new RegExp("^..\\\\"), "");
 			}
-		} else {
-			MFO.WriteLine(sub_build + obj + ": " + dir + "\\" + src);
-
-			if (PHP_ANALYZER == "pvs") {
-				MFO.WriteLine("\t@\"$(PVS_STUDIO)\" --cl-params $(" + flags + ") $(CFLAGS) $(" + bd_flags_name + ") /c " + dir + "\\" + src + " --source-file "  + dir + "\\" + src
-					+ " --cfg PVS-Studio.conf --errors-off \"V122 V117 V111\" ");
-			}
-			MFO.WriteLine("\t@$(CC) $(" + flags + ") $(CFLAGS) $(" + bd_flags_name + ") /c " + dir + "\\" + src + " /Fo" + sub_build + obj);
 		}
+		else {
+			var build_dir = (dirname ? obj_dir + "\\" + dirname : obj_dir).replace(new RegExp("^..\\\\"), "");
+		}
+
+		obj = sub_build + build_dir + "\\" + filename.replace(re, ".obj"); 
+
+		if (i > 0) {
+			srcs_line += " " + dir + "\\" + src;
+			objs_line += " " + obj
+		} else {
+			srcs_line = dir + "\\" + src;
+			objs_line = obj;
+		}
+
+		resp += " " + obj.replace('$(BUILD_DIR)', bd);
+		tv += " " + obj;
+
+		if (!srcs_by_dir.hasOwnProperty(build_dir)) {
+			srcs_by_dir[build_dir] = [];
+		} 
+
+		/* storing the index from the file_list */
+		srcs_by_dir[build_dir].push(i);
 	}
 
-	if (!PHP_MP_DISABLED) {
-		MFO.WriteLine(objs_line + ": " + srcs_line);
-		MFO.WriteLine("\t$(CC) $(" + flags + ") $(CFLAGS) /Fo" + sub_build + " $(" + bd_flags_name + ") /c " + srcs_line);
+	/* Create makefile build targets and dependencies. */
+	MFO.WriteLine(objs_line + ": " + srcs_line);
+
+	/* Create target subdirs if any and produce the compiler calls, /mp is respected if enabled. */
+	for (var k in srcs_by_dir) {
+		var dirs = k.split("\\");
+		var i, d = "";
+		for (i = 0; i < dirs.length; i++) {
+			d += dirs[i];
+			build_dirs[build_dirs.length] = d;
+			d += "\\";
+		}
+
+		var mangle_dir = k.replace(new RegExp("[\\\\/.-]", "g"), "_");
+		var bd_flags_name = "CFLAGS_BD_" + mangle_dir.toUpperCase();
+
+		DEFINE(bd_flags_name, "/Fp" + sub_build + d + " /FR" + sub_build + d + " ");
+		if (VS_TOOLSET) {
+			ADD_FLAG(bd_flags_name, "/Fd" + sub_build + d);
+		}
+
+		if (PHP_MP_DISABLED) {
+			for (var j in srcs_by_dir[k]) {
+				src = file_list[srcs_by_dir[k][j]];
+				if (PHP_ANALYZER == "pvs") {
+					MFO.WriteLine("\t@\"$(PVS_STUDIO)\" --cl-params $(" + flags + ") $(CFLAGS) $(" + bd_flags_name + ") /c " + dir + "\\" + src + " --source-file "  + dir + "\\" + src
+						+ " --cfg PVS-Studio.conf --errors-off \"V122 V117 V111\" ");
+				}
+
+				var _tmp = src.split("\\");
+				var filename = _tmp.pop();
+				obj = filename.replace(re, ".obj");
+
+				MFO.WriteLine("\t@$(CC) $(" + flags + ") $(CFLAGS) $(" + bd_flags_name + ") /c " + dir + "\\" + src + " /Fo" + sub_build + d + obj);
+			}
+		} else {
+			/* TODO create a response file at least for the source files to work around the cmd line length limit. */
+			var src_line = "";
+			for (var j in srcs_by_dir[k]) {
+				src_line += dir + "\\" + file_list[srcs_by_dir[k][j]] + " ";
+			}
+
+			MFO.WriteLine("\t$(CC) $(" + flags + ") $(CFLAGS) /Fo" + sub_build + d + " $(" + bd_flags_name + ") /c " + src_line);
+		}
 	}
 
 	DEFINE(sym, tv);
 
-	/* Generate the response file and define it to the Makefile. This can be 
-	   useful when getting the "command line too long" linker errors. */
+	/* Generate the object response file and define it to the Makefile. This can be 
+	   useful when getting the "command line too long" linker errors. 
+	   TODO pack this into a function when response files are used for other kinds of info. */
 	var obj_lst_fh = null;
 	if (!FSO.FileExists(obj_lst_fn)) {
 		obj_lst_fh = FSO.CreateTextFile(obj_lst_fn);
-		//STDOUT.WriteLine("Creating " + obj_lst_fn);
 	} else {
-		//STDOUT.WriteLine("Appending to " + obj_lst_fn);
 		obj_lst_fh = FSO.OpenTextFile(obj_lst_fn, 8);
 	}
 
@@ -2050,7 +2107,8 @@ function generate_makefile()
 			var dll = "php_" + extensions_enabled[i][0] + ".dll";
 			MF.WriteLine("	@copy $(BUILD_DIR)\\" + lib + " $(BUILD_DIR_DEV)\\lib");
 			MF.WriteLine("  @if not exist $(PHP_PREFIX) mkdir $(PHP_PREFIX) >nul");
-			MF.WriteLine("	@copy $(BUILD_DIR)\\" + dll + " $(PHP_PREFIX)");
+			MF.WriteLine("  @if not exist $(PHP_PREFIX)\\ext mkdir $(PHP_PREFIX)\\ext >nul");
+			MF.WriteLine("	@copy $(BUILD_DIR)\\" + dll + " $(PHP_PREFIX)\\ext");
 		}
 	} else {
 		MF.WriteBlankLines(1);
@@ -2089,7 +2147,16 @@ function ADD_FLAG(name, flags, target)
 	if (configure_subst.Exists(name)) {
 		var curr_flags = configure_subst.Item(name);
 
-		if (curr_flags.indexOf(flags) >= 0) {
+		/* Prefix with a space, thus making sure the
+		   current flag is not a substring of some
+		   other. It's still not a complete check if
+		   some flags with spaces got added. 
+
+		   TODO rework to use an array, so direct
+		        match can be done. This will also
+			help to normalize flags and to not
+			to insert duplicates. */
+		if (curr_flags.indexOf(" " + flags) >= 0 || curr_flags.indexOf(flags + " ") >= 0) {
 			return;
 		}
 		
@@ -2622,6 +2689,19 @@ function toolset_setup_common_cflags()
 		if (PHP_DEBUG == "yes") {
 			// Set some debug/release specific options
 			ADD_FLAG('CFLAGS', ' /RTC1 ');
+		} else {
+			if (VCVERS >= 1900) {
+				ADD_FLAG('CFLAGS', "/guard:cf");
+			}
+			if (VCVERS >= 1800) {
+				if (PHP_PGI != "yes" && PHP_PGO != "yes") {
+					ADD_FLAG('CFLAGS', "/Zc:inline");
+				}
+				/* We enable /opt:icf only with the debug pack, so /Gw only makes sense there, too. */
+				if (PHP_DEBUG_PACK == "yes") {
+					ADD_FLAG('CFLAGS', "/Gw");
+				}
+			}
 		}
 
 	} else if (CLANG_TOOLSET) {
@@ -2649,12 +2729,18 @@ function toolset_setup_common_ldlags()
 
 	// we want msvcrt in the PHP DLL
 	ADD_FLAG("PHP_LDFLAGS", "/nodefaultlib:libcmt");
+
+	if (VS_TOOLSET) {
+		if (VCVERS >= 1900) {
+			ADD_FLAG('LDFLAGS', "/GUARD:CF");
+		}
+	}
 }
 
 function toolset_setup_common_libs()
 {
 	// urlmon.lib ole32.lib oleaut32.lib uuid.lib gdi32.lib winspool.lib comdlg32.lib
-	DEFINE("LIBS", "kernel32.lib ole32.lib user32.lib advapi32.lib shell32.lib ws2_32.lib Dnsapi.lib");
+	DEFINE("LIBS", "kernel32.lib ole32.lib user32.lib advapi32.lib shell32.lib ws2_32.lib Dnsapi.lib psapi.lib");
 }
 
 function toolset_setup_build_mode()

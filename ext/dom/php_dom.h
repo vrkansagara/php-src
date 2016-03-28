@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2015 The PHP Group                                |
+   | Copyright (c) 1997-2016 The PHP Group                                |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -137,7 +137,7 @@ entry = zend_register_internal_class_ex(&ce, parent_ce);
 #define DOM_GET_OBJ(__ptr, __id, __prtype, __intern) { \
 	__intern = Z_DOMOBJ_P(__id); \
 	if (__intern->ptr == NULL || !(__ptr = (__prtype)((php_libxml_node_ptr *)__intern->ptr)->node)) { \
-  		php_error_docref(NULL, E_WARNING, "Couldn't fetch %s", __intern->std.ce->name->val);\
+  		php_error_docref(NULL, E_WARNING, "Couldn't fetch %s", ZSTR_VAL(__intern->std.ce->name));\
   		RETURN_NULL();\
   	} \
 }

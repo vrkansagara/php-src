@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend Engine                                                          |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2015 Zend Technologies Ltd. (http://www.zend.com) |
+   | Copyright (c) 1998-2016 Zend Technologies Ltd. (http://www.zend.com) |
    +----------------------------------------------------------------------+
    | This source file is subject to version 2.00 of the Zend license,     |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -66,7 +66,6 @@ enum _zend_ast_kind {
 	/* 1 child node */
 	ZEND_AST_VAR = 1 << ZEND_AST_NUM_CHILDREN_SHIFT,
 	ZEND_AST_CONST,
-	ZEND_AST_RESOLVE_CLASS_NAME,
 	ZEND_AST_UNPACK,
 	ZEND_AST_UNARY_PLUS,
 	ZEND_AST_UNARY_MINUS,
@@ -125,8 +124,6 @@ enum _zend_ast_kind {
 	ZEND_AST_SWITCH,
 	ZEND_AST_SWITCH_CASE,
 	ZEND_AST_DECLARE,
-	ZEND_AST_PROP_ELEM,
-	ZEND_AST_CONST_ELEM,
 	ZEND_AST_USE_TRAIT,
 	ZEND_AST_TRAIT_PRECEDENCE,
 	ZEND_AST_METHOD_REFERENCE,
@@ -143,6 +140,8 @@ enum _zend_ast_kind {
 	ZEND_AST_TRY,
 	ZEND_AST_CATCH,
 	ZEND_AST_PARAM,
+	ZEND_AST_PROP_ELEM,
+	ZEND_AST_CONST_ELEM,
 
 	/* 4 child nodes */
 	ZEND_AST_FOR = 4 << ZEND_AST_NUM_CHILDREN_SHIFT,

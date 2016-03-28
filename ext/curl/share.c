@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2015 The PHP Group                                |
+   | Copyright (c) 1997-2016 The PHP Group                                |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -76,8 +76,7 @@ static int _php_curl_share_setopt(php_curlsh *sh, zend_long option, zval *zvalue
 	switch (option) {
 		case CURLSHOPT_SHARE:
 		case CURLSHOPT_UNSHARE:
-			convert_to_long_ex(zvalue);
-			error = curl_share_setopt(sh->share, option, Z_LVAL_P(zvalue));
+			error = curl_share_setopt(sh->share, option, zval_get_long(zvalue));
 			break;
 
 		default:

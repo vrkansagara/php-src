@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2015 The PHP Group                                |
+   | Copyright (c) 1997-2016 The PHP Group                                |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -22,7 +22,7 @@
 #include "php.h"
 #include "ext/standard/base64.h"
 
-PHPAPI int php_url_decode(char *str, int len);
+PHPAPI size_t php_url_decode(char *str, size_t len);
 
 /* Memory streams use a dynamic memory buffer to emulate a stream.
  * You can use php_stream_memory_open to create a readonly stream
@@ -697,7 +697,9 @@ static php_stream * php_stream_url_wrap_rfc2397(php_stream_wrapper *wrapper, con
 			plen = sep - path;
 			vlen = (semi ? semi - sep : mlen - plen) - 1 /* '=' */;
 			key = estrndup(path, plen);
-			add_assoc_stringl_ex(&meta, key, plen, sep + 1, vlen);
+			if (plen != sizeof("mediatype")-1 || memcmp(key, "mediatype", sizeof("mediatype")-1)) {
+				add_assoc_stringl_ex(&meta, key, plen, sep + 1, vlen);
+			}
 			efree(key);
 			plen += vlen + 1;
 			mlen -= plen;
@@ -724,11 +726,11 @@ static php_stream * php_stream_url_wrap_rfc2397(php_stream_wrapper *wrapper, con
 			php_stream_wrapper_log_error(wrapper, options, "rfc2397: unable to decode");
 			return NULL;
 		}
-		comma = base64_comma->val;
-		ilen = (int)base64_comma->len;
+		comma = ZSTR_VAL(base64_comma);
+		ilen = (int)ZSTR_LEN(base64_comma);
 	} else {
 		comma = estrndup(comma, dlen);
-		dlen = php_url_decode(comma, (int)dlen);
+		dlen = php_url_decode(comma, dlen);
 		ilen = (int)dlen;
 	}
 

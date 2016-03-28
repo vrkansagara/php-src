@@ -2,7 +2,7 @@
   +----------------------------------------------------------------------+
   | PHP Version 7                                                        |
   +----------------------------------------------------------------------+
-  | Copyright (c) 1997-2015 The PHP Group                                |
+  | Copyright (c) 1997-2016 The PHP Group                                |
   +----------------------------------------------------------------------+
   | This source file is subject to version 3.01 of the PHP license,      |
   | that is bundled with this package in the file LICENSE, and is        |
@@ -287,7 +287,7 @@ static int oci_handle_preparer(pdo_dbh_t *dbh, const char *sql, size_t sql_len, 
 	OCIHandleAlloc(H->env, (dvoid*)&S->err, OCI_HTYPE_ERROR, 0, NULL);
 
 	if (sql_len) {
-		H->last_err = OCIStmtPrepare(S->stmt, H->err, (text*)sql, sql_len, OCI_NTV_SYNTAX, OCI_DEFAULT);
+		H->last_err = OCIStmtPrepare(S->stmt, H->err, (text*)sql, (ub4) sql_len, OCI_NTV_SYNTAX, OCI_DEFAULT);
 		if (nsql) {
 			efree(nsql);
 			nsql = NULL;
@@ -302,15 +302,13 @@ static int oci_handle_preparer(pdo_dbh_t *dbh, const char *sql, size_t sql_len, 
 
 	}
 
-	prefetch = pdo_oci_sanitize_prefetch(pdo_attr_lval(driver_options, PDO_ATTR_PREFETCH, PDO_OCI_PREFETCH_DEFAULT));
-	if (prefetch) {
+	prefetch = H->prefetch;  /* Note 0 is allowed so in future REF CURSORs can be used & then passed with no row loss*/
+	H->last_err = OCIAttrSet(S->stmt, OCI_HTYPE_STMT, &prefetch, 0,
+							 OCI_ATTR_PREFETCH_ROWS, H->err);
+	if (!H->last_err) {
+		prefetch *= PDO_OCI_PREFETCH_ROWSIZE;
 		H->last_err = OCIAttrSet(S->stmt, OCI_HTYPE_STMT, &prefetch, 0,
-			OCI_ATTR_PREFETCH_ROWS, H->err);
-		if (!H->last_err) {
-			prefetch *= PDO_OCI_PREFETCH_ROWSIZE;
-			H->last_err = OCIAttrSet(S->stmt, OCI_HTYPE_STMT, &prefetch, 0,
-				OCI_ATTR_PREFETCH_MEMORY, H->err);
-		}
+								 OCI_ATTR_PREFETCH_MEMORY, H->err);
 	}
 
 	stmt->driver_data = S;
@@ -334,7 +332,7 @@ static zend_long oci_handle_doer(pdo_dbh_t *dbh, const char *sql, size_t sql_len
 
 	OCIHandleAlloc(H->env, (dvoid*)&stmt, OCI_HTYPE_STMT, 0, NULL);
 
-	H->last_err = OCIStmtPrepare(stmt, H->err, (text*)sql, sql_len, OCI_NTV_SYNTAX, OCI_DEFAULT);
+	H->last_err = OCIStmtPrepare(stmt, H->err, (text*)sql, (ub4) sql_len, OCI_NTV_SYNTAX, OCI_DEFAULT);
 	if (H->last_err) {
 		H->last_err = oci_drv_error("OCIStmtPrepare");
 		OCIHandleFree(stmt, OCI_HTYPE_STMT);
@@ -442,6 +440,7 @@ static int oci_handle_rollback(pdo_dbh_t *dbh) /* {{{ */
 
 static int oci_handle_set_attribute(pdo_dbh_t *dbh, zend_long attr, zval *val) /* {{{ */
 {
+	zend_long lval = zval_get_long(val);
 	pdo_oci_db_handle *H = (pdo_oci_db_handle *)dbh->driver_data;
 
 	if (attr == PDO_ATTR_AUTOCOMMIT) {
@@ -456,9 +455,10 @@ static int oci_handle_set_attribute(pdo_dbh_t *dbh, zend_long attr, zval *val) /
 			dbh->in_txn = 0;
 		}
 
-		convert_to_long(val);
-
-		dbh->auto_commit = Z_LVAL_P(val);
+		dbh->auto_commit = (unsigned int)lval? 1 : 0;
+		return 1;
+	} else if (attr == PDO_ATTR_PREFETCH) {
+		H->prefetch = pdo_oci_sanitize_prefetch(lval);
 		return 1;
 	} else {
 		return 0;
@@ -524,6 +524,9 @@ static int oci_handle_get_attribute(pdo_dbh_t *dbh, zend_long attr, zval *return
 			ZVAL_BOOL(return_value, dbh->auto_commit);
 			return TRUE;
 
+		case PDO_ATTR_PREFETCH:
+			ZVAL_LONG(return_value, H->prefetch);
+			return TRUE;
 		default:
 			return FALSE;
 
@@ -602,6 +605,8 @@ static int pdo_oci_handle_factory(pdo_dbh_t *dbh, zval *driver_options) /* {{{ *
 	H = pecalloc(1, sizeof(*H), dbh->is_persistent);
 	dbh->driver_data = H;
 
+	H->prefetch = PDO_OCI_PREFETCH_DEFAULT;
+
 	/* allocate an environment */
 #if HAVE_OCIENVNLSCREATE
 	if (vars[0].optval) {
@@ -629,7 +634,7 @@ static int pdo_oci_handle_factory(pdo_dbh_t *dbh, zval *driver_options) /* {{{ *
 	OCIHandleAlloc(H->env, (dvoid **)&H->server, OCI_HTYPE_SERVER, 0, NULL);
 
 	H->last_err = OCIServerAttach(H->server, H->err, (text*)vars[1].optval,
-		   	strlen(vars[1].optval), OCI_DEFAULT);
+		   	(sb4) strlen(vars[1].optval), OCI_DEFAULT);
 
 	if (H->last_err) {
 		oci_drv_error("pdo_oci_handle_factory");
@@ -661,7 +666,7 @@ static int pdo_oci_handle_factory(pdo_dbh_t *dbh, zval *driver_options) /* {{{ *
 	/* username */
 	if (dbh->username) {
 		H->last_err = OCIAttrSet(H->session, OCI_HTYPE_SESSION,
-			   	dbh->username, strlen(dbh->username),
+			   	dbh->username, (ub4) strlen(dbh->username),
 				OCI_ATTR_USERNAME, H->err);
 		if (H->last_err) {
 			oci_drv_error("OCIAttrSet: OCI_ATTR_USERNAME");
@@ -672,7 +677,7 @@ static int pdo_oci_handle_factory(pdo_dbh_t *dbh, zval *driver_options) /* {{{ *
 	/* password */
 	if (dbh->password) {
 		H->last_err = OCIAttrSet(H->session, OCI_HTYPE_SESSION,
-			   	dbh->password, strlen(dbh->password),
+			   	dbh->password, (ub4) strlen(dbh->password),
 				OCI_ATTR_PASSWORD, H->err);
 		if (H->last_err) {
 			oci_drv_error("OCIAttrSet: OCI_ATTR_PASSWORD");
