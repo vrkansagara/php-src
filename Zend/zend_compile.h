@@ -421,6 +421,7 @@ typedef struct _zend_internal_function {
 
 union _zend_function {
 	zend_uchar type;	/* MUST be the first element of this struct! */
+	uint32_t   quick_arg_flags;
 
 	struct {
 		zend_uchar type;  /* never used */
@@ -451,7 +452,6 @@ struct _zend_execute_data {
 	zval                *return_value;
 	zend_function       *func;             /* executed funcrion              */
 	zval                 This;             /* this + call_info + num_args    */
-	zend_class_entry    *called_scope;
 	zend_execute_data   *prev_execute_data;
 	zend_array          *symbol_table;
 #if ZEND_EX_USE_RUN_TIME_CACHE
@@ -468,13 +468,16 @@ struct _zend_execute_data {
 #define ZEND_CALL_TOP                (1 << 1)
 #define ZEND_CALL_FREE_EXTRA_ARGS    (1 << 2) /* equal to IS_TYPE_REFCOUNTED */
 #define ZEND_CALL_CTOR               (1 << 3)
-/* Unused flag (1 << 4) */
+#define ZEND_CALL_HAS_SYMBOL_TABLE   (1 << 4)
 #define ZEND_CALL_CLOSURE            (1 << 5)
 #define ZEND_CALL_RELEASE_THIS       (1 << 6)
 #define ZEND_CALL_ALLOCATED          (1 << 7)
+#define ZEND_CALL_GENERATOR          (1 << 8)
+
+#define ZEND_CALL_INFO_SHIFT         16
 
 #define ZEND_CALL_INFO(call) \
-	(Z_TYPE_INFO((call)->This) >> 24)
+	(Z_TYPE_INFO((call)->This) >> ZEND_CALL_INFO_SHIFT)
 
 #define ZEND_CALL_KIND_EX(call_info) \
 	(call_info & (ZEND_CALL_CODE | ZEND_CALL_TOP))
@@ -482,12 +485,12 @@ struct _zend_execute_data {
 #define ZEND_CALL_KIND(call) \
 	ZEND_CALL_KIND_EX(ZEND_CALL_INFO(call))
 
-#define ZEND_SET_CALL_INFO(call, info) do { \
-		Z_TYPE_INFO((call)->This) = IS_OBJECT_EX | ((info) << 24); \
+#define ZEND_SET_CALL_INFO(call, object, info) do { \
+		Z_TYPE_INFO((call)->This) = ((object) ? IS_OBJECT_EX : IS_UNDEF) | ((info) << ZEND_CALL_INFO_SHIFT); \
 	} while (0)
 
 #define ZEND_ADD_CALL_FLAG_EX(call_info, flag) do { \
-		call_info |= ((flag) << 24); \
+		call_info |= ((flag) << ZEND_CALL_INFO_SHIFT); \
 	} while (0)
 
 #define ZEND_ADD_CALL_FLAG(call, flag) do { \
@@ -787,7 +790,7 @@ ZEND_API zend_bool zend_is_compiling(void);
 ZEND_API char *zend_make_compiled_string_description(const char *name);
 ZEND_API void zend_initialize_class_data(zend_class_entry *ce, zend_bool nullify_handlers);
 uint32_t zend_get_class_fetch_type(zend_string *name);
-ZEND_API zend_uchar zend_get_call_op(zend_uchar init_op, zend_function *fbc);
+ZEND_API zend_uchar zend_get_call_op(const zend_op *init_op, zend_function *fbc);
 
 typedef zend_bool (*zend_auto_global_callback)(zend_string *name);
 typedef struct _zend_auto_global {
@@ -897,6 +900,8 @@ ZEND_API void zend_assert_valid_class_name(const zend_string *const_name);
 #define ZEND_SEND_BY_REF     1
 #define ZEND_SEND_PREFER_REF 2
 
+#define ZEND_DIM_IS 1
+
 static zend_always_inline int zend_check_arg_send_type(const zend_function *zf, uint32_t arg_num, uint32_t mask)
 {
 	arg_num--;
@@ -923,16 +928,16 @@ static zend_always_inline int zend_check_arg_send_type(const zend_function *zf, 
 
 #ifdef WORDS_BIGENDIAN
 # define ZEND_SET_ARG_FLAG(zf, arg_num, mask) do { \
-		*(uint32_t*)&(zf)->type |= ((mask) << ((arg_num) - 1) * 2); \
+		(zf)->quick_arg_flags |= ((mask) << ((arg_num) - 1) * 2); \
 	} while (0)
 # define ZEND_CHECK_ARG_FLAG(zf, arg_num, mask) \
-	(((*((uint32_t*)&((zf)->type))) >> (((arg_num) - 1) * 2)) & (mask))
+	(((zf)->quick_arg_flags >> (((arg_num) - 1) * 2)) & (mask))
 #else
 # define ZEND_SET_ARG_FLAG(zf, arg_num, mask) do { \
-		*(uint32_t*)&(zf)->type |= (((mask) << 6) << (arg_num) * 2); \
+		(zf)->quick_arg_flags |= (((mask) << 6) << (arg_num) * 2); \
 	} while (0)
 # define ZEND_CHECK_ARG_FLAG(zf, arg_num, mask) \
-	(((*(uint32_t*)&(zf)->type) >> (((arg_num) + 3) * 2)) & (mask))
+	(((zf)->quick_arg_flags >> (((arg_num) + 3) * 2)) & (mask))
 #endif
 
 #define QUICK_ARG_MUST_BE_SENT_BY_REF(zf, arg_num) \
@@ -1017,11 +1022,16 @@ END_EXTERN_C()
 /* force IS_OBJ_USE_GUARDS for all classes */
 #define ZEND_COMPILE_GUARDS						(1<<9)
 
+/* disable builtin special case function calls */
+#define ZEND_COMPILE_NO_BUILTINS				(1<<10)
+
 /* The default value for CG(compiler_options) */
 #define ZEND_COMPILE_DEFAULT					ZEND_COMPILE_HANDLE_OP_ARRAY
 
 /* The default value for CG(compiler_options) during eval() */
 #define ZEND_COMPILE_DEFAULT_FOR_EVAL			0
+
+ZEND_API zend_bool zend_binary_op_produces_numeric_string_error(uint32_t opcode, zval *op1, zval *op2);
 
 #endif /* ZEND_COMPILE_H */
 

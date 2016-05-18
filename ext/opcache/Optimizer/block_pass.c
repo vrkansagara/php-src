@@ -685,6 +685,10 @@ optimize_constant_binary_op:
 						SET_VAR_SOURCE(opline);
 		                opline++;
 						continue;
+					} else if (zend_binary_op_produces_numeric_string_error(opline->opcode, &ZEND_OP1_LITERAL(opline), &ZEND_OP2_LITERAL(opline))) {
+						SET_VAR_SOURCE(opline);
+		                opline++;
+						continue;
 					}
 					er = EG(error_reporting);
 					EG(error_reporting) = 0;
@@ -1185,9 +1189,9 @@ next_target:
 				    		same_type == ZEND_OP1_TYPE(target) &&
 				    		same_var == VAR_NUM_EX(target->op1) &&
 							!(target_block->flags & ZEND_BB_PROTECTED)) {
-					/* JMPZ(X, L), L: X = JMPNZ_EX(X, L2) -> JMPZ(X, L+1) */
+					/* JMPZ(X, L), L: T = JMPNZ_EX(X, L2) -> T = JMPZ_EX(X, L+1) */
 					last_op->opcode += 3;
-					last_op->result = target->result;
+					COPY_NODE(last_op->result, target->result);
 					DEL_SOURCE(block, block->successors[0]);
 					block->successors[0] = target_block->successors[1];
 					ADD_SOURCE(block, block->successors[0]);

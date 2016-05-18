@@ -159,6 +159,11 @@ static void file_globals_ctor(php_file_globals *file_globals_p)
 
 static void file_globals_dtor(php_file_globals *file_globals_p)
 {
+#if defined(HAVE_GETHOSTBYNAME_R)
+	if (file_globals_p->tmp_host_buf) {
+		free(file_globals_p->tmp_host_buf);
+	}
+#endif
 }
 
 PHP_INI_BEGIN()
@@ -257,19 +262,19 @@ PHP_MINIT_FUNCTION(file)
 	REGISTER_LONG_CONSTANT("STREAM_IPPROTO_IP", IPPROTO_IP, CONST_CS|CONST_PERSISTENT);
 #endif
 
-#ifdef IPPROTO_TCP
+#if defined(IPPROTO_TCP) || defined(PHP_WIN32)
 	REGISTER_LONG_CONSTANT("STREAM_IPPROTO_TCP", IPPROTO_TCP, CONST_CS|CONST_PERSISTENT);
 #endif
 
-#ifdef IPPROTO_UDP
+#if defined(IPPROTO_UDP) || defined(PHP_WIN32)
 	REGISTER_LONG_CONSTANT("STREAM_IPPROTO_UDP", IPPROTO_UDP, CONST_CS|CONST_PERSISTENT);
 #endif
 
-#ifdef IPPROTO_ICMP
+#if defined(IPPROTO_ICMP) || defined(PHP_WIN32)
 	REGISTER_LONG_CONSTANT("STREAM_IPPROTO_ICMP", IPPROTO_ICMP, CONST_CS|CONST_PERSISTENT);
 #endif
 
-#ifdef IPPROTO_RAW
+#if defined(IPPROTO_RAW) || defined(PHP_WIN32)
 	REGISTER_LONG_CONSTANT("STREAM_IPPROTO_RAW", IPPROTO_RAW, CONST_CS|CONST_PERSISTENT);
 #endif
 
